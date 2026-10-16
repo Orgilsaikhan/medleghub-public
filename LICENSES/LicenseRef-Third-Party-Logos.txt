@@ -1,0 +1,8 @@
+The technology logos in apps/web/public/logos/ belong to their respective owners
+and are not covered by the licenses of this repository. They are used only to
+identify the topic of each course.
+
+The HTML5 logo is by the W3C and is licensed under CC BY 3.0
+(https://www.w3.org/html/logo/).
+
+Check each owner's terms before you reuse any of these logos.

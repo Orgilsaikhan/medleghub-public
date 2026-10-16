@@ -1,0 +1,46 @@
+version = 1
+
+# Файл бүрийн лиценз (https://reuse.software). Шалгах: `pipx run reuse lint`.
+# Нэг файлд олон бичлэг таарвал ХАМГИЙН СҮҮЛИЙНХ нь хүчинтэй — тиймээс
+# ерөнхий бичлэг эхэнд, тусгай бичлэгүүд дараа нь.
+
+# Доор жагсаагаагүй бүх файл — код.
+[[annotations]]
+path = "**"
+SPDX-FileCopyrightText = "2026 Medleghub contributors"
+SPDX-License-Identifier = "AGPL-3.0-or-later"
+
+# Сургалтын агуулга: хичээл, дасгал, SQL жишээ сангууд.
+[[annotations]]
+path = [
+  "apps/api/app/content/c_cpp/**",
+  "apps/api/app/content/flowgorithm/**",
+  "apps/api/app/content/git_github/**",
+  "apps/api/app/content/html_css/**",
+  "apps/api/app/content/javascript/**",
+  "apps/api/app/content/python/**",
+  "apps/api/app/content/react/**",
+  "apps/api/app/content/sql/**",
+  "apps/sql-runner/sandbox/*.sql",
+]
+SPDX-FileCopyrightText = "2026 Medleghub contributors"
+SPDX-License-Identifier = "CC-BY-SA-4.0"
+
+# Medleghub-ийн нэр, лого, брэндийн файлууд ба өөрийн хууль эрх зүйн баримт бичиг.
+[[annotations]]
+path = [
+  "apps/web/public/main_logo.png",
+  "apps/web/public/og.png",
+  "apps/web/src/app/favicon.ico",
+  "apps/web/public/badges/**",
+  "apps/web/public/videos/**",
+  "apps/web/src/content/legal/*.md",
+]
+SPDX-FileCopyrightText = "2026 Medleghub contributors"
+SPDX-License-Identifier = "LicenseRef-Medleghub-Reserved"
+
+# Гуравдагч этгээдийн технологийн лого.
+[[annotations]]
+path = "apps/web/public/logos/*.png"
+SPDX-FileCopyrightText = "The respective logo owners"
+SPDX-License-Identifier = "LicenseRef-Third-Party-Logos"

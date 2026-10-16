@@ -1,0 +1,12 @@
+Copyright (c) 2026 Medleghub contributors. All rights reserved.
+
+The files marked with this notice in REUSE.toml are not covered by the GNU Affero
+General Public License or by the Creative Commons license used elsewhere in this
+repository. They are:
+
+- the Medleghub name, logo and visual identity: the logo, the favicon, the Open
+  Graph image, the badge artwork and the demo video;
+- Medleghub's own Privacy Policy and Terms of Service.
+
+You may not copy, modify or redistribute them without written permission. If you
+run your own deployment of this software, replace them with your own.

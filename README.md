@@ -296,6 +296,7 @@ Supabase ашиглавал IPv4-тэй **session pooler**-ийн хаягийг
 | Хаана | Юу |
 |---|---|
 | `apps/web/src/content/legal/` | Нууцлалын бодлого, Үйлчилгээний нөхцөл — Medleghub-ийн баримт бичиг. Өөрийнхөөрөө солино. |
+| `apps/web/public/main_logo.png`, `badges/`, `videos/`; `apps/web/src/app/favicon.ico` | Medleghub-ийн лого, тэмдгийн зураг, демо видео — лицензээр нээгдээгүй (доорх «Лиценз»). Өөрийнхөөрөө солино. |
 | `apps/web/src/lib/seo.ts` | `SITE_URL`, `CONTACT_EMAIL`, `FACEBOOK_URL` |
 | `apps/web/src/components/layout/site-footer.tsx` | Холбоо барих имэйл, утас |
 | `apps/web/src/lib/i18n/mn.ts` | Төлбөрийн алдааны мессеж дэх имэйл |
@@ -317,3 +318,24 @@ Supabase ашиглавал IPv4-тэй **session pooler**-ийн хаягийг
   500 өгнө — `npm run cf:preview` ашигла.
 - Cloudflare-ийн proxy ~100 секундэд тасардаг тул удаан ажлыг background job
   болго.
+
+## Лиценз
+
+| Юу | Лиценз |
+|---|---|
+| Код — доор дурдаагүй бүх файл | [AGPL-3.0-or-later](LICENSE) |
+| Сургалтын агуулга — `apps/api/app/content/` доторх сургалт бүрийн хавтас (`c_cpp`, `flowgorithm`, `git_github`, `html_css`, `javascript`, `python`, `react`, `sql`), `apps/sql-runner/sandbox/*.sql` | [CC BY-SA 4.0](LICENSES/CC-BY-SA-4.0.txt) |
+| Medleghub нэр, лого, favicon, OG зураг, тэмдгийн зураг, демо видео | Бүх эрх хуулиар хамгаалагдсан ([тайлбар](LICENSES/LicenseRef-Medleghub-Reserved.txt)) |
+| Нууцлалын бодлого, Үйлчилгээний нөхцөл (`apps/web/src/content/legal/`) | Бүх эрх хуулиар хамгаалагдсан |
+| `apps/web/public/logos/` дахь технологийн лого | Эзэмшигчдийнх ([тайлбар](LICENSES/LicenseRef-Third-Party-Logos.txt)) |
+
+Файл бүрийн яг лицензийг [`REUSE.toml`](REUSE.toml) заана; `pipx run reuse lint`
+шалгана.
+
+- **AGPL-3.0:** өөрчилсөн хувилбарыг сервер дээр ажиллуулж бусдад үйлчилбэл
+  түүний эх кодыг тэдгээр хэрэглэгчдэд нээлттэй болгоно.
+- **CC BY-SA 4.0:** хичээлийг ашиглах, өөрчлөхдөө «Medleghub»-ийг эх сурвалж
+  гэж дурдаж, өөрчилсөн хувилбараа мөн CC BY-SA 4.0-оор түгээнэ.
+- Өөрийн сайт ажиллуулбал Medleghub-ийн нэр, лого, брэндийн файл, хууль эрх
+  зүйн баримт бичгийг өөрийнхөөрөө солино («Medleghub-д тусгайлан бичигдсэн
+  зүйлс»-ийг үз).
