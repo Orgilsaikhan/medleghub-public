@@ -1,0 +1,6 @@
+# Тест ажиллуулахад. Бүх тест Docker-гүй ч ажиллана (Linux, `resource` модуль).
+-r requirements.txt
+pytest>=8.4.0
+pytest-asyncio>=1.3.0
+httpx>=0.28.1
+ruff>=0.15.0

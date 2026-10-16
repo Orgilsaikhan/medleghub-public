@@ -1,0 +1,5 @@
+.next
+node_modules
+package-lock.json
+src/components/ui
+src/lib/logo-manifest.ts

@@ -1,0 +1,43 @@
+# Caddy нь Let's Encrypt-ээс сертификатыг автоматаар авч шинэчилнэ.
+# Урьдчилсан нөхцөл: `API_HOST` нь энэ серверийн нийтийн IP рүү заасан,
+# 80 болон 443 порт интернэтээс нээлттэй байх.
+{
+	email {$ACME_EMAIL}
+}
+
+{$API_HOST} {
+	encode zstd gzip
+
+	# Wire-ийн webhook ЗӨВХӨН Wire-ийн тогтмол IP-ээс (https://docs.wire.mn/docs/guides/webhooks).
+	# `remote_ip` нь TCP холболтын хаяг — X-Forwarded-For шиг хуурамчаар
+	# бичих боломжгүй. Энэ нь гарын үсгийн шалгалтыг ОРЛОХГҮЙ: API нь
+	# `WirePayment-Signature`-ийг үргэлж шалгана. Wire IP-гээ солибол энд шинэчилнэ.
+	@wire_webhook_foreign {
+		path /api/v1/billing/webhooks/wire
+		not remote_ip 65.109.117.186
+	}
+	respond @wire_webhook_foreign 403
+
+	# Хүсэлтийн зам: хөтөч -> Cloudflare Worker (medleghub.com) -> Caddy -> api.
+	# Caddy (`trusted_proxies`-гүй) нь ирсэн X-Forwarded-For-ыг ХАЯЖ, TCP хаягаар
+	# солино — Worker-ээр ирсэн бол Cloudflare-ийн хаяг. Үүнийг хуурамчаар
+	# бичих боломжгүй. Зочны жинхэнэ IP-г Worker гарын үсэгтэй
+	# `X-MedlegHub-Client-IP` толгойгоор дамжуулж, API шалгана
+	# (`app/core/rate_limit.py`, `apps/web/worker/client-ip.mjs`).
+	# Cloudflare-ийн IP-г `trusted_proxies`-д БҮҮ нэм: бусдын Worker ч эдгээр
+	# IP-ээс api.medleghub.com-д дурын толгойтой хандаж чадна.
+	reverse_proxy api:8000 {
+		# C++ хөрвүүлэлт 15 с хүртэл үргэлжилж болно
+		# (`COMPILER_TIMEOUT_SECONDS`), API нь 30 с хүлээдэг. Анхдагч богино
+		# timeout нь эдгээрийг дундуур нь тасална.
+		transport http {
+			read_timeout 60s
+			write_timeout 60s
+		}
+	}
+
+	log {
+		output stderr
+		format console
+	}
+}

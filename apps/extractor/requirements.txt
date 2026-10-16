@@ -1,0 +1,7 @@
+# Задлагч үйлчилгээний ажиллах хамаарал. FastAPI, uvicorn нь API-тай ижил доод хувилбар.
+fastapi>=0.121.0
+uvicorn>=0.41.0
+# PDF — PDFium (Apache-2.0 / BSD-3). PyMuPDF нь AGPL тул БҮҮ нэм.
+pypdfium2>=5.0.0
+# OOXML-ийн XML-ийг DTD, entity-гүйгээр задлах.
+defusedxml>=0.7.1

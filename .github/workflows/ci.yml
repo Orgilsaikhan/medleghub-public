@@ -1,0 +1,347 @@
+name: CI
+
+on:
+  push:
+    # `test` бол өдөр тутмын ажлын салбар — бүх шалгалт эндээс эхэлнэ.
+    # `main` нь зөвхөн шалгалт давсан ажлыг хүлээж авна.
+    branches: [test, main]
+  pull_request:
+  workflow_dispatch:
+
+# Нэг branch дээр шинэ push ирвэл өмнөх ажиллаж буй CI-г зогсооно.
+# E2E нь удаан тул хуучирсан ажиллагаанд runner үрэхгүй.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  api:
+    name: API (lint + tests)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: apps/api
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: suralts
+          POSTGRES_PASSWORD: suralts
+          POSTGRES_DB: suralts_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U suralts"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql+asyncpg://suralts:suralts@localhost:5432/suralts_test
+      ENVIRONMENT: test
+      JWT_SECRET: test-secret-used-only-in-ci-not-a-real-credential
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: apps/api/pyproject.toml
+      - run: pip install -e ".[dev]"
+      - run: ruff check app tests
+      - run: ruff format --check app tests
+      - run: alembic upgrade head
+      - run: pytest -q
+
+  compiler:
+    name: Compiler (lint + tests)
+    runs-on: ubuntu-latest
+    # Emscripten image (~3.4 GB) татаж, system library болон PCH-г бэлдэнэ.
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: apps/compiler
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: apps/compiler/requirements-dev.txt
+      - run: pip install -r requirements-dev.txt
+      - run: ruff check compiler tests
+      - run: ruff format --check compiler tests
+      # emcc шаардахгүй тестүүд. emcc-тэй тестүүд энд алгасагдаж, доор image дотор ажиллана.
+      - run: pytest -q
+      - name: Build test image
+        run: docker build --target test -t medleghub-compiler-test .
+      # Production шиг зөвхөн уншигдах файлын систем — `test_toolchain_is_read_only`
+      # үүнийг шаарддаг.
+      - name: Test inside the image
+        run: docker run --rm --read-only --tmpfs /tmp:size=512m,mode=1777 medleghub-compiler-test
+
+  sql-runner:
+    name: SQL runner (lint + tests)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: apps/sql-runner
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: apps/sql-runner/requirements-dev.txt
+      - run: pip install -r requirements-dev.txt
+      - run: ruff check sqlrunner tests
+      - run: ruff format --check sqlrunner tests
+      # MySQL шаардахгүй тестүүд. MySQL-тэй тестүүд энд алгасагдаж, доор image дотор ажиллана.
+      - run: pytest -q
+      - name: Build test image
+        run: docker build --target test -t medleghub-sql-runner-test .
+      # Production шиг зөвхөн уншигдах файлын систем, datadir нь tmpfs дээр.
+      - name: Test inside the image
+        run: docker run --rm --read-only --tmpfs /tmp:size=2g,mode=1777 medleghub-sql-runner-test
+
+  extractor:
+    name: Extractor (lint + tests)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: apps/extractor
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: apps/extractor/requirements-dev.txt
+      - run: pip install -r requirements-dev.txt
+      - run: ruff check extractor tests
+      - run: ruff format --check extractor tests
+      # Бүх тест Docker-гүй ч ажиллана. Доор production-той ижил image дотор дахин.
+      - run: pytest -q
+      - name: Build test image
+        run: docker build --target test -t medleghub-extractor-test .
+      # Production шиг зөвхөн уншигдах файлын систем, түр файл нь tmpfs дээр.
+      - name: Test inside the image
+        run: docker run --rm --read-only --tmpfs /tmp:size=256m,mode=1777 medleghub-extractor-test
+
+  web:
+    name: Web (lint + typecheck + build)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: apps/web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          # Node 24 — хөгжүүлэлтийн машинтай ижил үндсэн хувилбар.
+          #
+          # ЧУХАЛ: `package-lock.json`-г npm 11.19-өөс доошгүй хувилбараар
+          # шинэчилнэ. npm 11.6 нь `@tailwindcss/oxide-wasm32-wasi`-ийн
+          # дотоод `@emnapi/*` хамаарлыг lockfile-д бичихгүй орхидог бөгөөд
+          # runner дээрх шинэ npm үүнийг «зөрүүтэй» гэж үзээд `npm ci`
+          # дээр EUSAGE алдаа өгдөг.
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: apps/web/package-lock.json
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm run format:check
+      - run: npm run test:unit
+      - run: npm run build
+        env:
+          NEXT_PUBLIC_API_URL: http://localhost:8000/api/v1
+      - run: npm audit --audit-level=high
+
+  e2e:
+    name: E2E (browser)
+    runs-on: ubuntu-latest
+    # Pyodide ачаалах шалгалт болон хөрвүүлэгчийн image бүтээх нь удаан тул
+    # энгийн job-оос урт хугацаа өгнө.
+    timeout-minutes: 45
+    # `needs:` ЗОРИУД БАЙХГҮЙ. Өмнө нь `needs: [api, web]` байсан бөгөөд
+    # `api` эсвэл `web` унах буюу цуцлагдах бүрд E2E нь «skipped» болж,
+    # хамгийн чухал шалгалт огт ажиллахгүй өнгөрдөг байв. Runner-ийн цаг
+    # илүү зарцуулагдах ч browser шалгалт үргэлж ажиллах нь чухал.
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: suralts
+          POSTGRES_PASSWORD: suralts
+          POSTGRES_DB: suralts
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U suralts"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql+asyncpg://suralts:suralts@localhost:5432/suralts
+      ENVIRONMENT: development
+      JWT_SECRET: test-secret-used-only-in-ci-not-a-real-credential
+      CORS_ORIGINS: http://localhost:3000
+      # Тестүүд дараалан нэвтэрдэг тул хурдны хязгаар нь хуурамч уналт
+      # үүсгэнэ. Хязгаарлагчийг `tests/test_security.py` шалгадаг.
+      RATE_LIMIT_ENABLED: "false"
+      # bcrypt-ийн үндсэн 12 давталт нь seed болон нэвтрэлт бүрийг
+      # удаашруулна. CI-д хурд илүү чухал.
+      BCRYPT_ROUNDS: "6"
+      NEXT_PUBLIC_API_URL: http://localhost:8000/api/v1
+      API_INTERNAL_URL: http://localhost:8000/api/v1
+      # `.env.local` нь git-д ордоггүй тул CI-д энэ хаягийг ЗААВАЛ эндээс
+      # өгнө. Үгүй бол `next.config.ts` нь видео домэйныг `connect-src`-д
+      # нэмэхгүй бөгөөд HLS сегментийн fetch CSP-ээр хаагдаж, «CSP
+      # тохируулсан видео домэйныг хаахгүй» шалгалт унана. Хаяг нь
+      # `e2e/admin-journey.spec.mjs`-д бичсэн `#video_url`-тай таарах ёстой.
+      NEXT_PUBLIC_MEDIA_ORIGINS: https://cdn.example.com
+      # C/C++ хөрвүүлэгч — доорх «Start compiler» алхам Docker-оор асаана.
+      COMPILER_URL: http://localhost:8090
+      # MySQL sandbox — доорх «Start SQL runner» алхам Docker-оор асаана.
+      SQL_RUNNER_URL: http://localhost:8091
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # --- C/C++ хөрвүүлэгч ------------------------------------------------
+      # Хамгийн удаан алхам тул эхэлж бүтээнэ. Production-той ижил хязгаартай:
+      # зөвхөн уншигдах файлын систем, эрхгүй, санах ой/процесс хязгаартай.
+      - name: Start compiler
+        run: |
+          docker build --target runtime -t medleghub-compiler apps/compiler
+          docker run -d --name medleghub-compiler -p 127.0.0.1:8090:8080 \
+            --read-only --tmpfs /tmp:size=512m,mode=1777,nosuid,nodev,noexec \
+            --cap-drop ALL --security-opt no-new-privileges:true \
+            --pids-limit 128 --memory 2g \
+            medleghub-compiler
+
+      # --- MySQL sandbox ---------------------------------------------------
+      - name: Start SQL runner
+        run: |
+          docker build --target runtime -t medleghub-sql-runner apps/sql-runner
+          docker run -d --name medleghub-sql-runner -p 127.0.0.1:8091:8080 \
+            --read-only --tmpfs /tmp:size=1g,mode=1777,nosuid,nodev,noexec \
+            --cap-drop ALL --security-opt no-new-privileges:true \
+            --pids-limit 256 --memory 1536m \
+            medleghub-sql-runner
+
+      # --- Backend ---------------------------------------------------------
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: apps/api/pyproject.toml
+
+      - name: Install API
+        working-directory: apps/api
+        run: pip install -e ".[dev]"
+
+      - name: Migrate and seed
+        working-directory: apps/api
+        run: |
+          alembic upgrade head
+          python -m app.seed --reset
+
+      - name: Start API
+        working-directory: apps/api
+        run: |
+          nohup python -m uvicorn app.main:app --port 8000 > /tmp/api.log 2>&1 &
+          echo "API pid $!"
+
+      # --- Frontend --------------------------------------------------------
+      - uses: actions/setup-node@v4
+        with:
+          # Node 24 — хөгжүүлэлтийн машинтай ижил үндсэн хувилбар.
+          #
+          # ЧУХАЛ: `package-lock.json`-г npm 11.19-өөс доошгүй хувилбараар
+          # шинэчилнэ. npm 11.6 нь `@tailwindcss/oxide-wasm32-wasi`-ийн
+          # дотоод `@emnapi/*` хамаарлыг lockfile-д бичихгүй орхидог бөгөөд
+          # runner дээрх шинэ npm үүнийг «зөрүүтэй» гэж үзээд `npm ci`
+          # дээр EUSAGE алдаа өгдөг.
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: apps/web/package-lock.json
+
+      - name: Install web
+        working-directory: apps/web
+        run: npm ci
+
+      # Playwright-ийн browser нь node_modules дотор биш, тусдаа хавтсанд
+      # татагддаг тул npm cache үүнийг хамрахгүй. ~150 MB.
+      - name: Cache Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('apps/web/package-lock.json') }}
+
+      - name: Install Chromium
+        working-directory: apps/web
+        run: npx playwright install --with-deps chromium
+
+      # `prebuild` нь Monaco болон Pyodide-г node_modules-оос `public/` рүү
+      # хуулна — сүлжээнээс нэмж юу ч татахгүй.
+      - name: Build web
+        working-directory: apps/web
+        run: npm run build
+
+      - name: Start web
+        working-directory: apps/web
+        run: |
+          nohup npm run start > /tmp/web.log 2>&1 &
+          echo "web pid $!"
+
+      # --- Бүгд бэлэн болохыг хүлээнэ --------------------------------------
+      - name: Wait for services
+        run: |
+          for url in http://localhost:8090/health http://localhost:8091/health http://localhost:8000/api/v1/courses http://localhost:3000/; do
+            echo "waiting for $url"
+            for attempt in $(seq 1 60); do
+              if curl -fsS -o /dev/null "$url"; then
+                echo "  ready after ${attempt}s"
+                break
+              fi
+              if [ "$attempt" -eq 60 ]; then
+                echo "  TIMED OUT"
+                echo "--- api.log ---"; tail -40 /tmp/api.log || true
+                echo "--- web.log ---"; tail -40 /tmp/web.log || true
+                echo "--- compiler ---"; docker logs --tail 40 medleghub-compiler || true
+                echo "--- sql-runner ---"; docker logs --tail 40 medleghub-sql-runner || true
+                exit 1
+              fi
+              sleep 1
+            done
+          done
+
+      # C/C++ ба Python дасгал бүрийн жишиг шийдэл бүх тестийг давж, эхлэл
+      # код давахгүй байгааг жинхэнэ хөрвүүлэгч, Pyodide болон хөтөчийн
+      # worker-ийн ижил эх кодоор шалгана.
+      - name: Verify exercises
+        working-directory: apps/web
+        run: npm run verify:exercises
+
+      # React хичээл бүрийн эхлэл код «Хөтөч» дээр алдаагүй ажиллаж, жишиг
+      # шийдэл бүх тестийг давж, эхлэл код давахгүйг бодит sandbox runtime
+      # дээр (сайтын CSP-тэй ижил хуудсанд) шалгана.
+      - name: Verify React exercises
+        working-directory: apps/web
+        run: npm run verify:react
+
+      - name: Run E2E suite
+        working-directory: apps/web
+        run: npm run e2e
+
+      # Унасан үед серверийн лог нь шалтгааныг хамгийн хурдан харуулна.
+      - name: Server logs
+        if: failure()
+        run: |
+          echo "--- api.log ---"; tail -100 /tmp/api.log || true
+          echo "--- web.log ---"; tail -100 /tmp/web.log || true
+          echo "--- compiler ---"; docker logs --tail 100 medleghub-compiler || true
+          echo "--- sql-runner ---"; docker logs --tail 100 medleghub-sql-runner || true

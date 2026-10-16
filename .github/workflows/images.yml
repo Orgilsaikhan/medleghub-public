@@ -1,0 +1,107 @@
+name: Images
+
+# Production-ийн Docker image-уудыг (api, compiler, sql-runner, extractor) бүтээж
+# GitHub Container Registry (ghcr.io) руу түлхэнэ. VM нь зөвхөн татаж
+# ажиллуулна — жижиг сервер дээр compiler-ийг эх кодоос бүтээхэд 30+ минут
+# зарцуулдаг.
+#
+# Tag:
+#   main -> latest, main, sha-<7>
+#   test -> test, sha-<7>
+# Аль tag-ийг ажиллуулахыг VM дээр `.env.prod`-ийн `IMAGE_TAG` сонгоно.
+# Бүх image нэг commit дээр хамт бүтдэг тул `sha-<7>` нь бүгд ижил
+# хувилбар гэсэн үг.
+
+on:
+  push:
+    branches: [test, main]
+    paths:
+      - apps/api/**
+      - apps/compiler/**
+      - apps/sql-runner/**
+      - apps/extractor/**
+      - .github/workflows/images.yml
+  workflow_dispatch:
+
+# Нэг branch дээр шинэ push ирвэл хуучирсан build-ийг зогсооно.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build:
+    name: ${{ matrix.image }}
+    runs-on: ubuntu-latest
+    # Эхний build-д emsdk (~3.4 GB) татаж, prewarm хийнэ. Дараагийнх нь кэшээс.
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - image: api
+            context: apps/api
+          - image: compiler
+            context: apps/compiler
+          - image: sql-runner
+            context: apps/sql-runner
+          - image: extractor
+            context: apps/extractor
+    steps:
+      - uses: actions/checkout@v4
+
+      # ghcr.io нь зөвхөн жижиг үсэг хүлээн авна (`Orgilsaikhan` -> `orgilsaikhan`).
+      - name: Image name
+        run: echo "IMAGE=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/medleghub-${{ matrix.image }}" >> "$GITHUB_ENV"
+
+      # GitHub-ийн runner дээр MySQL суусан байдаг. Түүний AppArmor профайл
+      # (`usr.sbin.mysqld`) замаар таардаг тул buildx-ийн RUN доторх
+      # `/usr/sbin/mysqld`-д ч хамаарч, зөвхөн `/usr/share/mysql/`,
+      # `/var/lib/mysql/`-г зөвшөөрнө. Үүнээс болж sql-runner-ийн prewarm
+      # «Can't find error-message file ... errmsg.sys», «data directory ...
+      # is unusable» гэж унадаг. Build-ийн өмнө профайлыг runner-аас буулгана.
+      - name: Runner-ийн mysqld AppArmor профайлыг буулгах
+        if: matrix.image == 'sql-runner'
+        run: |
+          if [ -f /etc/apparmor.d/usr.sbin.mysqld ]; then
+            sudo apparmor_parser -R /etc/apparmor.d/usr.sbin.mysqld || true
+          fi
+          sudo aa-status | grep -i mysqld || echo "mysqld-ийн AppArmor профайл ачаалагдаагүй"
+
+      - uses: docker/setup-buildx-action@v4
+
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - id: meta
+        uses: docker/metadata-action@v6
+        with:
+          images: ${{ env.IMAGE }}
+          tags: |
+            type=ref,event=branch
+            type=sha,prefix=sha-
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - uses: docker/build-push-action@v7
+        with:
+          context: ${{ matrix.context }}
+          # ЗААВАЛ: compiler, sql-runner, extractor-ийн Dockerfile-ийн СҮҮЛИЙН stage нь
+          # `test`. Target-гүй бол тестийн image production руу орно.
+          target: runtime
+          # VM нь x86. ARM сервер рүү шилжвэл `linux/arm64` нэмж, QEMU биш
+          # ARM runner (`ubuntu-24.04-arm`) дээр бүтээнэ — prewarm эмуляцид
+          # хэт удаан.
+          platforms: linux/amd64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          # Кэш registry-д: GitHub Actions-ийн 10 GB кэш compiler-ийн
+          # prewarm давхаргад хүрэлцэхгүй.
+          cache-from: type=registry,ref=${{ env.IMAGE }}:buildcache
+          cache-to: type=registry,ref=${{ env.IMAGE }}:buildcache,mode=max

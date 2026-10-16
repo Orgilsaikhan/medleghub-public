@@ -1,0 +1,50 @@
+# --- Secrets ---
+.env
+.env.local
+.env.*.local
+.env.*.prod
+!.env.example
+
+# --- Node ---
+node_modules/
+.next/
+out/
+build/
+.turbo/
+*.tsbuildinfo
+next-env.d.ts
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# --- Editors / OS ---
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# --- Logs ---
+*.log
+npm-debug.log*
+
+# --- Production ---
+.env.prod
+
+# Хувийн түлхүүр (Oracle API key гэх мэт) — ХЭЗЭЭ Ч commit хийхгүй.
+*.pem
+
+# --- MedlegHub Live ---
+# Хөгжүүлэлтэд оруулсан материалын эх файл (`LIVE_STORAGE_DIR`, production-д R2).
+apps/api/var/
+
+# --- Эзэмшигчийн хувийн тэмдэглэл (нийтийн repo-д орохгүй) ---
+/CLAUDE.md
+/project_state.md
+.claude/

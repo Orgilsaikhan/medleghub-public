@@ -1,0 +1,57 @@
+[project]
+name = "medleghub-api"
+version = "0.1.0"
+description = "Suralts — Монгол интерактив програмчлалын сургалтын платформын API"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi>=0.121.0",
+    "uvicorn[standard]>=0.41.0",
+    "sqlalchemy[asyncio]>=2.0.44",
+    "asyncpg>=0.30.0",
+    "alembic>=1.17.0",
+    "pydantic[email]>=2.12.0",
+    "pydantic-settings>=2.12.0",
+    "bcrypt>=5.0.0",
+    "pyjwt>=2.10.1",
+    "python-multipart>=0.0.20",
+    "pillow>=12.0.0",
+    "httpx>=0.28.1",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.4.0",
+    "pytest-asyncio>=1.3.0",
+    "httpx>=0.28.1",
+    "ruff>=0.15.0",
+    "psycopg[binary]>=3.2.0",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+src = ["app", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "C4", "SIM", "ASYNC"]
+ignore = ["B008"]  # FastAPI Depends() in defaults is the documented pattern
+
+[tool.ruff.lint.isort]
+known-first-party = ["app", "tests"]
+
+[tool.ruff.lint.per-file-ignores]
+# Хичээлийн агуулга нь прозо текст — мөрийн уртаар таслах нь уншигдацыг
+# сайжруулахгүй. Код нь markdown блок дотор өөрийн форматтай байна.
+"app/content/**" = ["E501"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+filterwarnings = ["ignore::DeprecationWarning"]
+
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["app*"]

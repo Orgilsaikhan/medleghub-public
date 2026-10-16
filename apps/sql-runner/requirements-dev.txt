@@ -1,0 +1,6 @@
+# Тест ажиллуулахад. MySQL шаарддаг тестүүд зөвхөн Docker image дотор ажиллана.
+-r requirements.txt
+pytest>=8.4.0
+pytest-asyncio>=1.3.0
+httpx>=0.28.1
+ruff>=0.15.0

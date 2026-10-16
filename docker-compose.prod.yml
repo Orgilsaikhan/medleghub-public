@@ -1,0 +1,196 @@
+# Production байршуулалт — API, хөрвүүлэгч, SQL ажиллуулагч, файл задлагч нэг VM дээр.
+#
+#   docker compose -f docker-compose.prod.yml --env-file .env.prod pull
+#   docker compose -f docker-compose.prod.yml --env-file .env.prod up -d
+#
+# Image-уудыг GitHub Actions бүтээж ghcr.io руу түлхдэг
+# (`.github/workflows/images.yml`), аль хувилбарыг ажиллуулахыг `IMAGE_TAG`
+# сонгоно. Repo private тул VM дээр НЭГ удаа нэвтэрнэ (`read:packages` эрхтэй
+# classic PAT):
+#
+#   echo <PAT> | docker login ghcr.io -u <github-хэрэглэгч> --password-stdin
+#
+# Сервер дээр эх кодоос бүтээх бол (удаан) `up -d --build`.
+#
+# Өгөгдлийн сан нь Supabase (`DATABASE_URL`) — энэ VM дээр Postgres ажиллахгүй.
+#
+# `docker-compose.yml` (хөгжүүлэлт) -ээс ялгаатай нь:
+#   - Хөрвүүлэгч, SQL ажиллуулагч, задлагч гадагш ЯМАР Ч порт нээхгүй.
+#   - Тус бүр өөрийн `internal: true` сүлжээнд — интернэт рүү гарах замгүй.
+#   - Caddy нь 80/443-ыг эзэмшиж, Let's Encrypt сертификатыг автоматаар авна.
+
+name: suralts
+
+services:
+  api:
+    build:
+      context: apps/api
+    image: ghcr.io/orgilsaikhan/medleghub-api:${IMAGE_TAG:-latest}
+    restart: unless-stopped
+    environment:
+      ENVIRONMENT: production
+      DEBUG: "false"
+      # Supabase-ийн Session pooler (IPv4). `db.<ref>.supabase.co` нь зөвхөн IPv6
+      # тул VM-ээс хүрэхгүй. Хэлбэр нь `.env.prod.example`-д.
+      DATABASE_URL: ${DATABASE_URL:?}
+      JWT_SECRET: ${JWT_SECRET:?}
+      # Cookie нь medleghub.com дээр тавигдана (Cloudflare worker `/api/v1`-ийг
+      # rewrite-ээр proxy хийдэг тул хөтөч API-г ижил origin гэж үзнэ). `lax` хангалттай.
+      AUTH_COOKIE_SECURE: "true"
+      AUTH_COOKIE_SAMESITE: ${AUTH_COOKIE_SAMESITE:-lax}
+      CORS_ORIGINS: ${CORS_ORIGINS:?}
+      COMPILER_URL: http://compiler:8080
+      SQL_RUNNER_URL: http://sql-runner:8080
+      # MedlegHub Live-ийн файл задлагч (PDF, PPTX, DOCX → текст).
+      EXTRACTOR_URL: http://extractor:8080
+      # Standard багцын төлбөр (Wire). Хоосон бол төлбөр хүлээн авахгүй (503).
+      WIRE_SECRET_KEY: ${WIRE_SECRET_KEY:-}
+      WIRE_WEBHOOK_SECRET: ${WIRE_WEBHOOK_SECRET:-}
+      WIRE_ALLOWED_OPERATORS: ${WIRE_ALLOWED_OPERATORS:-qpay}
+      # Төлбөрийн дараа Wire хэрэглэгчийг буцаах frontend-ийн HTTPS хаяг.
+      SITE_URL: ${SITE_URL:-}
+      # Имэйлийн нэг удаагийн код (бүртгэл, нууц үг сэргээх, имэйл солих) —
+      # Supabase Auth-аар. Production дээр эхний хоёр заавал (`README.md` → «Supabase»).
+      SUPABASE_URL: ${SUPABASE_URL:?}
+      SUPABASE_ANON_KEY: ${SUPABASE_ANON_KEY:?}
+      SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY:-}
+      # Cloudflare Worker-ийн зочны IP-д зурсан гарын үсгийг шалгах нууц — Worker-ийн
+      # `CLIENT_IP_SECRET` secret-тэй ИЖИЛ. Хоосон бол rate limit Cloudflare-ийн
+      # IP-гаар тоологдоно (бүх зочин нэг сав).
+      CLIENT_IP_SECRET: ${CLIENT_IP_SECRET:-}
+      # MedlegHub Live (AI Study): `off` (анхдагч) / `admins` / `all`.
+      LIVE_ACCESS: ${LIVE_ACCESS:-off}
+      # AI: OpenRouter (одоогийн сонголт) эсвэл Google Gemini шууд. Хоёулаа хоосон бол
+      # AI унтарна (материал боловсруулахгүй, 503). `AI_PROVIDER` хоосон = `auto`.
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      OPENROUTER_ZDR: ${OPENROUTER_ZDR:-}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      AI_PROVIDER: ${AI_PROVIDER:-}
+      # Ажил тус бүрийн загварын дараалал (таслалаар, эхнийх нь үндсэн). Хоосон бол
+      # `app/core/config.py`-ийн анхдагч. `AI_MODEL_LIMITS` — AI Studio-гийн хязгаар (JSON).
+      AI_DOCUMENT_MODELS: ${AI_DOCUMENT_MODELS:-}
+      AI_GUIDE_MODELS: ${AI_GUIDE_MODELS:-}
+      AI_TOPIC_QUIZ_MODELS: ${AI_TOPIC_QUIZ_MODELS:-}
+      AI_FULL_QUIZ_MODELS: ${AI_FULL_QUIZ_MODELS:-}
+      AI_EXAM_MODELS: ${AI_EXAM_MODELS:-}
+      AI_MODEL_LIMITS: ${AI_MODEL_LIMITS:-}
+      AI_PLATFORM_MONTHLY_BUDGET_USD: ${AI_PLATFORM_MONTHLY_BUDGET_USD:-}
+      # Хэрэглэгчийн хязгаар (эрх тус бүрд). Хоосон бол `config.py`-ийн анхдагч.
+      LIVE_STANDARD_DOCUMENTS_PER_MONTH: ${LIVE_STANDARD_DOCUMENTS_PER_MONTH:-}
+      LIVE_STANDARD_AI_MONTHLY_USD: ${LIVE_STANDARD_AI_MONTHLY_USD:-}
+      LIVE_PREMIUM_DOCUMENTS_PER_MONTH: ${LIVE_PREMIUM_DOCUMENTS_PER_MONTH:-}
+      LIVE_PREMIUM_AI_MONTHLY_USD: ${LIVE_PREMIUM_AI_MONTHLY_USD:-}
+      LIVE_PASS_AI_USD: ${LIVE_PASS_AI_USD:-}
+      # Эх файлын хувийн R2 bucket. Хоосон бол материал оруулах 503.
+      LIVE_R2_ACCOUNT_ID: ${LIVE_R2_ACCOUNT_ID:-}
+      LIVE_R2_ACCESS_KEY_ID: ${LIVE_R2_ACCESS_KEY_ID:-}
+      LIVE_R2_SECRET_ACCESS_KEY: ${LIVE_R2_SECRET_ACCESS_KEY:-}
+      LIVE_R2_BUCKET: ${LIVE_R2_BUCKET:-}
+    # `edge` нь интернэт рүү гарах замтай — Supabase руу тэгээр холбогдоно.
+    networks: [edge, compile, sqlrun, extract]
+    mem_limit: 1g
+
+  compiler:
+    build:
+      context: apps/compiler
+      target: runtime
+    image: ghcr.io/orgilsaikhan/medleghub-compiler:${IMAGE_TAG:-latest}
+    restart: unless-stopped
+    environment:
+      # Зэрэг хөрвүүлэлт. 1 vCPU-тэй VM дээр 1 (`.env.prod`).
+      COMPILER_MAX_CONCURRENCY: ${COMPILER_MAX_CONCURRENCY:-2}
+    # ЗӨВХӨН `compile` сүлжээнд — гадагш ч, дотогш ч өөр зам байхгүй.
+    networks: [compile]
+    # ЗААВАЛ: upstream emsdk image хөрвүүлэгчийг хэн ч бичих эрхтэй ирүүлдэг.
+    # Дэлгэрэнгүйг `apps/compiler/Dockerfile`-ээс үз.
+    read_only: true
+    tmpfs:
+      - /tmp:size=512m,mode=1777,nosuid,nodev,noexec
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 128
+    mem_limit: 2g
+    # VM-ийн CPU-ийн тооноос их байж болохгүй — Docker контейнерийг эхлүүлэхгүй.
+    cpus: ${COMPILER_CPUS:-2}
+
+  sql-runner:
+    build:
+      context: apps/sql-runner
+      target: runtime
+    image: ghcr.io/orgilsaikhan/medleghub-sql-runner:${IMAGE_TAG:-latest}
+    restart: unless-stopped
+    environment:
+      # Зэрэг ажиллах MySQL сервер, нэг нь ~160 MB + ~120 MB tmpfs (`.env.prod`).
+      SQLRUNNER_SLOTS: ${SQLRUNNER_SLOTS:-2}
+    # ЗӨВХӨН `sqlrun` сүлжээнд — гадагш ч, дотогш ч өөр зам байхгүй.
+    networks: [sqlrun]
+    # Дэлгэрэнгүйг `apps/sql-runner/Dockerfile`-ээс үз.
+    read_only: true
+    tmpfs:
+      - /tmp:size=1g,mode=1777,nosuid,nodev,noexec
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 256
+    mem_limit: 1536m
+    cpus: 1
+
+  extractor:
+    build:
+      context: apps/extractor
+      target: runtime
+    image: ghcr.io/orgilsaikhan/medleghub-extractor:${IMAGE_TAG:-latest}
+    restart: unless-stopped
+    # ЗӨВХӨН `extract` сүлжээнд — гадагш ч, дотогш ч өөр зам байхгүй.
+    networks: [extract]
+    # Итгэж болохгүй файл энд задарна. Нууц мэдээлэл ЭНД БҮҮ ӨГ.
+    # Дэлгэрэнгүйг `apps/extractor/Dockerfile`-ээс үз.
+    read_only: true
+    tmpfs:
+      - /tmp:size=256m,mode=1777,nosuid,nodev,noexec
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 64
+    # Нэг задлалт (дэд процесс) 768 MB-ын хаягийн зайтай.
+    mem_limit: 1g
+    cpus: 1
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      # Жишээ: 129-146-1-2.sslip.io
+      API_HOST: ${API_HOST:?}
+      ACME_EMAIL: ${ACME_EMAIL:?}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      # Сертификатууд энд хадгалагдана. Устгавал Let's Encrypt-ийн
+      # долоо хоногийн хязгаарт хүрч болзошгүй тул БҮҮ устга.
+      - caddy-data:/data
+      - caddy-config:/config
+    networks: [edge]
+    depends_on:
+      - api
+
+networks:
+  # Caddy <-> api, мөн api -> интернэт (Supabase, Wire).
+  edge:
+  # api <-> compiler. `internal` нь хөрвүүлэгчийг интернэтээс таслана —
+  # сурагчийн код хөрвүүлэлтийн үед гадагш холбогдох оролдлого бүтэхгүй.
+  compile:
+    internal: true
+  # api <-> sql-runner. Сурагчийн SQL интернэт рүү ч, API-ийн сан руу ч хүрэхгүй.
+  sqlrun:
+    internal: true
+  # api <-> extractor. Хортой файл задлагдах үед гадагш холбогдож чадахгүй.
+  extract:
+    internal: true
+
+volumes:
+  caddy-data:
+  caddy-config:

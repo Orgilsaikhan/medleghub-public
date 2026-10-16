@@ -1,0 +1,105 @@
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: suralts-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: suralts
+      POSTGRES_PASSWORD: suralts
+      POSTGRES_DB: suralts
+    ports:
+      - "5432:5432"
+    volumes:
+      - suralts-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U suralts -d suralts"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # C/C++ хөрвүүлэгч — сурагчийн кодыг WebAssembly болгоно, ажиллуулахгүй.
+  # API нь `COMPILER_URL`-аар хандана. Анхны build удаан: Emscripten image
+  # 3.4 GB бөгөөд system library, PCH-г бэлдэнэ.
+  compiler:
+    build:
+      context: apps/compiler
+      target: runtime
+    image: medleghub-compiler
+    container_name: medleghub-compiler
+    restart: unless-stopped
+    ports:
+      # Зөвхөн энэ компьютерээс. Production-д огт нээхгүй — API-тай нэг
+      # дотоод сүлжээнд, гадагшаа сүлжээгүйгээр байрлуулна.
+      - "127.0.0.1:8090:8080"
+    environment:
+      COMPILER_MAX_CONCURRENCY: "2"
+    # ЗААВАЛ: upstream emsdk image хөрвүүлэгчийг хэн ч бичих эрхтэй ирүүлдэг.
+    # Зөвхөн уншигдах файлын систем нь эвдэрсэн хөрвүүлэлт дараагийн
+    # сурагчдын хөрвүүлэгчийг өөрчлөхөөс хамгаална. Нууц мэдээлэл ЭНД БҮҮ ӨГ —
+    # сурагч `#include "/proc/self/environ"` бичиж чадна.
+    read_only: true
+    tmpfs:
+      - /tmp:size=512m,mode=1777,nosuid,nodev,noexec
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 128
+    mem_limit: 2g
+    cpus: 2
+
+  # MySQL sandbox — MySQL хичээлийн кодыг тусгаарлагдсан MySQL 8.4 сервер дээр
+  # ажиллуулна. API нь `SQL_RUNNER_URL`-аар хандана. Ажиллагаа бүрийн дараа
+  # сервер `delguur`, `nomiin_san` жишээ сангуудтайгаа анхны төлөвт буцна.
+  sql-runner:
+    build:
+      context: apps/sql-runner
+      target: runtime
+    image: medleghub-sql-runner
+    container_name: medleghub-sql-runner
+    restart: unless-stopped
+    ports:
+      # Зөвхөн энэ компьютерээс. Production-д огт нээхгүй.
+      - "127.0.0.1:8091:8080"
+    environment:
+      SQLRUNNER_SLOTS: "2"
+    # ЗААВАЛ: MySQL-ийн datadir бүхэлдээ /tmp (tmpfs)-д. Нууц мэдээлэл ЭНД БҮҮ ӨГ.
+    read_only: true
+    tmpfs:
+      # slot × ~400 MB. Сурагч асар том хүснэгт үүсгэвэл энд хязгаарлагдана.
+      - /tmp:size=1g,mode=1777,nosuid,nodev,noexec
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    # mysqld нь олон thread-тэй — thread бүр pids-д тооцогдоно.
+    pids_limit: 256
+    # tmpfs нь санах ойд тооцогдоно: slot бүр ~160 MB процесс + ~120 MB datadir.
+    mem_limit: 1536m
+    cpus: 1
+
+  # Файл задлагч (MedlegHub Live) — хэрэглэгчийн PDF, PPTX, DOCX-ээс текст
+  # задална. API нь `EXTRACTOR_URL`-аар хандана. Итгэж болохгүй файл бүр
+  # хязгаартай тусдаа процесст задарна.
+  extractor:
+    build:
+      context: apps/extractor
+      target: runtime
+    image: medleghub-extractor
+    container_name: medleghub-extractor
+    restart: unless-stopped
+    ports:
+      # Зөвхөн энэ компьютерээс. Production-д огт нээхгүй.
+      - "127.0.0.1:8092:8080"
+    # ЗААВАЛ: итгэж болохгүй файл энд задарна. Түр файл зөвхөн /tmp (tmpfs)-д.
+    # Нууц мэдээлэл ЭНД БҮҮ ӨГ.
+    read_only: true
+    tmpfs:
+      - /tmp:size=256m,mode=1777,nosuid,nodev,noexec
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 64
+    mem_limit: 1g
+    cpus: 1
+
+volumes:
+  suralts-db-data:

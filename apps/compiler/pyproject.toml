@@ -1,0 +1,21 @@
+[project]
+name = "medleghub-compiler"
+version = "0.1.0"
+description = "MedlegHub — C/C++ кодыг WebAssembly болгож хөрвүүлэх тусгаарлагдсан үйлчилгээ"
+requires-python = ">=3.10"
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+src = ["compiler", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "C4", "SIM", "ASYNC"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["compiler", "tests"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+pythonpath = ["."]

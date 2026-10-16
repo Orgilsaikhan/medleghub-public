@@ -1,0 +1,38 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  // MedlegHub вэб — Next.js-ийг @opennextjs/cloudflare-ээр Workers дээр.
+  // Build: `npm run cf:build` (scripts/cloudflare-build.mjs), байршуулах: `npm run cf:deploy`.
+  "name": "medleghub-web",
+  // OpenNext-ийн worker-ийг ороож, `/api/v1` хүсэлтэд зочны гарын үсэгтэй IP-г
+  // нэмнэ (`worker/client-ip.mjs`). Secret: `npx wrangler secret put CLIENT_IP_SECRET`.
+  "main": "./worker/index.mjs",
+  // ЗААВАЛ: esbuild-ийн `keep-names` нь функцэд `__name(...)` нэмдэг. next-themes
+  // нь загварын script-ээ `.toString()`-оор хуудсанд шигтгэдэг тул хөтөч дээр
+  // «__name is not defined» гарч, харанхуй горим эхлэхгүй.
+  // https://opennext.js.org/cloudflare/howtos/keep_names
+  "keep_names": false,
+  "compatibility_date": "2026-09-01",
+  "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
+  "assets": {
+    "directory": ".open-next/assets",
+    "binding": "ASSETS",
+  },
+  "services": [
+    {
+      "binding": "WORKER_SELF_REFERENCE",
+      "service": "medleghub-web",
+    },
+  ],
+  "vars": {
+    // Server Component-ууд backend руу ШУУД хандах хаяг (`src/lib/api/client.ts`).
+    // Хөтчийн хүсэлт `/api/v1` rewrite-аар явдаг — түүний зорилтыг build-ийн
+    // үед `API_PROXY_TARGET` тогтооно.
+    "API_INTERNAL_URL": "https://api.medleghub.com/api/v1",
+  },
+  // Route (custom domain биш): medleghub.com-д proxied (улбар үүл) DNS бичлэг
+  // аль хэдийн байгаа тул custom domain үүсгэх боломжгүй (code 100117). Route нь
+  // тэр бичлэг дээр ажиллаж, бүх хүсэлтийг worker хүлээн авна — бичлэгийн
+  // зорилт руу хүсэлт очихгүй.
+  "routes": [{ "pattern": "medleghub.com/*", "zone_name": "medleghub.com" }],
+  "observability": { "enabled": true },
+}
